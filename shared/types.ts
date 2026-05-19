@@ -19,8 +19,7 @@ export type Platform =
   | 'ollama'
   | 'kilo'
   | 'pollinations'
-  | 'llm7'
-  | 'chutes';
+  | 'llm7';
 
 export interface Model {
   id: number;

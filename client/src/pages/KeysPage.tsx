@@ -24,7 +24,6 @@ const PLATFORMS: { value: Platform; label: string }[] = [
   { value: 'kilo', label: 'Kilo Gateway (anon ok)' },
   { value: 'pollinations', label: 'Pollinations (anon ok)' },
   { value: 'llm7', label: 'LLM7 (anon ok)' },
-  { value: 'chutes', label: 'Chutes' },
 ]
 
 const statusDot: Record<string, string> = {

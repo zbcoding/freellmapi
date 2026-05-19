@@ -133,14 +133,10 @@ register(new OpenAICompatProvider({
   baseUrl: 'https://api.llm7.io/v1',
 }));
 
-// Chutes.ai — OpenAI-compatible. Anonymous requests return 429 immediately;
-// requires a free API key from chutes.ai. Free plan ~200 req/day, shared GPU
-// queue. Quota numbers fluctuate.
-register(new OpenAICompatProvider({
-  platform: 'chutes',
-  name: 'Chutes',
-  baseUrl: 'https://llm.chutes.ai/v1',
-}));
+// Chutes was evaluated for V11 and dropped: probe with a free-tier key
+// returned 402 on every model — "Quota exceeded and account balance is
+// $0.0, please pay with fiat or send tao". The "free" tier requires a
+// non-zero balance, which conflicts with the project's no-card criterion.
 
 export function getProvider(platform: Platform): BaseProvider | undefined {
   return providers.get(platform);

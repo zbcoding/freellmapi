@@ -837,12 +837,16 @@ function migrateModelsV10(db: Database.Database) {
  * 2. Re-enable NVIDIA NIM — `meta/llama-3.1-70b-instruct` was disabled in V2
  *    when NIM moved to credits. Per May 2026 audit it's free again (~1,000
  *    starter credits never expire, 40 RPM/model).
- * 3. Add four new aggregator/anon-friendly platforms confirmed live May 2026:
- *    Kilo Gateway, Pollinations, LLM7.io (all three accept anonymous requests
- *    on at least one model), Chutes (key required).
- *    - For the keyless ones the user still needs a placeholder key entry
- *      (any non-empty string works) because the router filters on
- *      `keys.length === 0` to decide whether a platform is routable.
+ * 3. Add three new aggregator/anon-friendly platforms confirmed live May 2026:
+ *    Kilo Gateway, Pollinations, LLM7.io — all three accept anonymous
+ *    requests on at least one model.
+ *    - The user still needs a placeholder key entry (any non-empty string
+ *      works) because the router filters on `keys.length === 0` to decide
+ *      whether a platform is routable.
+ *    Chutes was evaluated and dropped: probe with a free-tier key returned
+ *    402 on every model — "Quota exceeded and account balance is $0.0,
+ *    please pay with fiat or send tao". The "free" tier requires a paid
+ *    balance, which conflicts with the no-card criterion.
  */
 function migrateModelsV11(db: Database.Database) {
   // 1) Rename cerebras qwen3-235b → qwen-3-235b-a22b-instruct-2507 if the
@@ -877,6 +881,7 @@ function migrateModelsV11(db: Database.Database) {
     ['nvidia',       'nvidia/nemotron-3-super-120b-a12b',                 'Nemotron 3 Super 120B (NV)',        22, 9, 'Frontier', 40, null, null, null, '~2M (credits)', 262144],
     ['nvidia',       'nvidia/nemotron-3-nano-30b-a3b',                    'Nemotron 3 Nano 30B (NV)',          22, 9, 'Medium',   40, null, null, null, '~3M (credits)', 262144],
     ['nvidia',       'google/gemma-4-31b-it',                             'Gemma 4 31B (NV)',                  19, 9, 'Medium',   40, null, null, null, '~3M (credits)', 262144],
+    ['nvidia',       'moonshotai/kimi-k2.6',                              'Kimi K2.6 (NV)',                     3, 9, 'Frontier', 40, null, null, null, '~2M (credits)', 131072],
 
     // Kilo Gateway — 200 req/hr per IP anon. Most named :free routes have
     // transitioned to paid ("free period ended"); probe-confirmed live:
@@ -892,14 +897,6 @@ function migrateModelsV11(db: Database.Database) {
     ['llm7',         'codestral-latest',                          'Codestral (LLM7)',              16, 8,  'Medium',   100, null, null, null, '~2-3M (100/hr)',  32000],
     ['llm7',         'ministral-8b-2512',                         'Ministral 8B (LLM7)',           28, 10, 'Small',    100, null, null, null, '~2-3M (100/hr)', 131072],
     ['llm7',         'GLM-4.6V-Flash',                            'GLM-4.6V Flash (LLM7)',         15, 9,  'Large',    100, null, null, null, '~2-3M (100/hr)', 131072],
-
-    // Chutes.ai — key required (anon returns 429). Free plan ~200 req/day,
-    // shared GPU queue. These are the docs-listed free-tier models; rows
-    // marked enabled but will fail health check until user adds a key.
-    ['chutes',       'deepseek-ai/DeepSeek-V3',                   'DeepSeek V3 (Chutes)',           4, 9,  'Frontier', null, 200, null, null, '~3-5M (200/day)', 131072],
-    ['chutes',       'zai-org/GLM-5.1',                           'GLM-5.1 (Chutes)',               6, 9,  'Frontier', null, 200, null, null, '~3-5M (200/day)', 131072],
-    ['chutes',       'Qwen/Qwen3.5-397B-Instruct',                'Qwen3.5 397B (Chutes)',          3, 9,  'Frontier', null, 200, null, null, '~3-5M (200/day)', 262144],
-    ['chutes',       'MiniMaxAI/MiniMax-M2.5',                    'MiniMax M2.5 (Chutes)',          3, 9,  'Large',    null, 200, null, null, '~3-5M (200/day)', 196608],
   ];
 
   const apply = db.transaction(() => {
