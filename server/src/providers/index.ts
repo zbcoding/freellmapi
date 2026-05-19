@@ -103,6 +103,45 @@ register(new OpenAICompatProvider({
   timeoutMs: 120000,
 }));
 
+// Kilo AI Gateway — OpenAI-compatible aggregator. Anonymous access works
+// (200 req/hr per IP) for the few :free routes still active; a Kilo API key
+// raises the limit. Most named "free" routes in the docs have transitioned to
+// paid ("free period ended") — probe before adding catalog rows.
+register(new OpenAICompatProvider({
+  platform: 'kilo',
+  name: 'Kilo Gateway',
+  baseUrl: 'https://api.kilo.ai/api/gateway/v1',
+}));
+
+// Pollinations — OpenAI-compatible, anonymous tier. The chat completions
+// endpoint lives at `/openai/v1/chat/completions` (NOT `/v1/...` — the
+// `/openai` prefix is mandatory). Public model list returns one anonymous
+// model (`openai-fast` = GPT-OSS 20B on OVH, tools=true).
+register(new OpenAICompatProvider({
+  platform: 'pollinations',
+  name: 'Pollinations',
+  baseUrl: 'https://text.pollinations.ai/openai/v1',
+}));
+
+// LLM7.io — OpenAI-compatible aggregator. 100 req/hr free; anonymous access
+// also works for basic models. Wraps a handful of upstream models behind one
+// token (GPT-OSS, Llama 3.1 Turbo via Meta, Codestral via Mistral, Ministral,
+// GLM-4.6V-Flash).
+register(new OpenAICompatProvider({
+  platform: 'llm7',
+  name: 'LLM7',
+  baseUrl: 'https://api.llm7.io/v1',
+}));
+
+// Chutes.ai — OpenAI-compatible. Anonymous requests return 429 immediately;
+// requires a free API key from chutes.ai. Free plan ~200 req/day, shared GPU
+// queue. Quota numbers fluctuate.
+register(new OpenAICompatProvider({
+  platform: 'chutes',
+  name: 'Chutes',
+  baseUrl: 'https://llm.chutes.ai/v1',
+}));
+
 export function getProvider(platform: Platform): BaseProvider | undefined {
   return providers.get(platform);
 }

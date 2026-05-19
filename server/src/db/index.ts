@@ -45,6 +45,7 @@ export function initDb(dbPath?: string): Database.Database {
   migrateModelsV8(db);
   migrateModelsV9(db);
   migrateModelsV10(db);
+  migrateModelsV11(db);
   ensureUnifiedKey(db);
 
   console.log(`Database initialized at ${resolvedPath}`);
@@ -811,6 +812,83 @@ function migrateModelsV10(db: Database.Database) {
     ['ollama', 'gpt-oss:20b',          'GPT-OSS 20B (Ollama)',         18, 10, 'Medium',   null, null, null, null, '~20-30M', 131072],
     ['ollama', 'gemma4:31b',           'Gemma 4 31B (Ollama)',         22, 10, 'Medium',   null, null, null, null, '~20-30M', 131072],
   ];
+  const apply = db.transaction(() => {
+    for (const a of additions) insert.run(...a);
+    const missing = db.prepare(`
+      SELECT m.id FROM models m
+      LEFT JOIN fallback_config f ON m.id = f.model_db_id
+      WHERE f.id IS NULL ORDER BY m.intelligence_rank ASC
+    `).all() as { id: number }[];
+    if (missing.length > 0) {
+      const maxPriority = (db.prepare('SELECT COALESCE(MAX(priority), 0) AS mx FROM fallback_config').get() as { mx: number }).mx;
+      const addFb = db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)');
+      for (let i = 0; i < missing.length; i++) addFb.run(missing[i].id, maxPriority + i + 1);
+    }
+  });
+  apply();
+}
+
+/**
+ * V11 (May 2026):
+ * 1. Fix long-standing bug: Cerebras `qwen3-235b` was inserted with the
+ *    wrong model_id in the original seed (real id is
+ *    `qwen-3-235b-a22b-instruct-2507`). Subsequent rank/limit updates that
+ *    target the correct id have been silent no-ops since V0 on fresh deploys.
+ * 2. Re-enable NVIDIA NIM — `meta/llama-3.1-70b-instruct` was disabled in V2
+ *    when NIM moved to credits. Per May 2026 audit it's free again (~1,000
+ *    starter credits never expire, 40 RPM/model).
+ * 3. Add four new aggregator/anon-friendly platforms confirmed live May 2026:
+ *    Kilo Gateway, Pollinations, LLM7.io (all three accept anonymous requests
+ *    on at least one model), Chutes (key required).
+ *    - For the keyless ones the user still needs a placeholder key entry
+ *      (any non-empty string works) because the router filters on
+ *      `keys.length === 0` to decide whether a platform is routable.
+ */
+function migrateModelsV11(db: Database.Database) {
+  // 1) Rename cerebras qwen3-235b → qwen-3-235b-a22b-instruct-2507 if the
+  //    old id still exists on this DB. Safe to re-run because of the WHERE.
+  db.prepare(`
+    UPDATE models SET model_id = 'qwen-3-235b-a22b-instruct-2507'
+     WHERE platform = 'cerebras' AND model_id = 'qwen3-235b'
+  `).run();
+
+  // 2) Re-enable NVIDIA NIM (still has 1,000+ starter credits free-tier).
+  db.prepare(`
+    UPDATE models SET enabled = 1, monthly_token_budget = '~3M (1k credits)'
+     WHERE platform = 'nvidia' AND model_id = 'meta/llama-3.1-70b-instruct'
+  `).run();
+
+  // 3) Add catalog rows for the four new platforms. Numeric limits are
+  //    conservative — provider docs publish best-effort bounds that fluctuate.
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const additions: Array<[string, string, string, number, number, string, number | null, number | null, number | null, number | null, string, number | null]> = [
+    // Kilo Gateway — 200 req/hr per IP anon. Most named :free routes have
+    // transitioned to paid ("free period ended"); probe-confirmed live:
+    ['kilo',         'nvidia/nemotron-3-super-120b-a12b:free',  'Nemotron 3 Super 120B (Kilo)',  22, 9,  'Frontier', null, null, null, null, '~2-3M (200/hr)', 262144],
+
+    // Pollinations — anonymous /openai endpoint. Public model list returns
+    // just one anonymous-tier entry. Tool calls supported per their metadata.
+    ['pollinations', 'openai-fast',                              'GPT-OSS 20B (Pollinations)',    18, 10, 'Medium',   null, null, null, null, '~? (anon)',      131072],
+
+    // LLM7.io — 100 req/hr free (anonymous works). Probe-confirmed list:
+    ['llm7',         'gpt-oss-20b',                              'GPT-OSS 20B (LLM7)',            18, 10, 'Medium',   100, null, null, null, '~2-3M (100/hr)', 131072],
+    ['llm7',         'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo', 'Llama 3.1 8B Turbo (LLM7)', 28, 10, 'Small',    100, null, null, null, '~2-3M (100/hr)', 131072],
+    ['llm7',         'codestral-latest',                          'Codestral (LLM7)',              16, 8,  'Medium',   100, null, null, null, '~2-3M (100/hr)',  32000],
+    ['llm7',         'ministral-8b-2512',                         'Ministral 8B (LLM7)',           28, 10, 'Small',    100, null, null, null, '~2-3M (100/hr)', 131072],
+    ['llm7',         'GLM-4.6V-Flash',                            'GLM-4.6V Flash (LLM7)',         15, 9,  'Large',    100, null, null, null, '~2-3M (100/hr)', 131072],
+
+    // Chutes.ai — key required (anon returns 429). Free plan ~200 req/day,
+    // shared GPU queue. These are the docs-listed free-tier models; rows
+    // marked enabled but will fail health check until user adds a key.
+    ['chutes',       'deepseek-ai/DeepSeek-V3',                   'DeepSeek V3 (Chutes)',           4, 9,  'Frontier', null, 200, null, null, '~3-5M (200/day)', 131072],
+    ['chutes',       'zai-org/GLM-5.1',                           'GLM-5.1 (Chutes)',               6, 9,  'Frontier', null, 200, null, null, '~3-5M (200/day)', 131072],
+    ['chutes',       'Qwen/Qwen3.5-397B-Instruct',                'Qwen3.5 397B (Chutes)',          3, 9,  'Frontier', null, 200, null, null, '~3-5M (200/day)', 262144],
+    ['chutes',       'MiniMaxAI/MiniMax-M2.5',                    'MiniMax M2.5 (Chutes)',          3, 9,  'Large',    null, 200, null, null, '~3-5M (200/day)', 196608],
+  ];
+
   const apply = db.transaction(() => {
     for (const a of additions) insert.run(...a);
     const missing = db.prepare(`
