@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { migrateDbSchema } from './migrations.js';
+import { seedKeysFromEnv } from '../services/env-keys.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.resolve(__dirname, '../../data/freeapi.db');
@@ -33,6 +34,10 @@ export function initDb(dbPath?: string): Database.Database {
   db.pragma('foreign_keys = ON');
 
   migrateDbSchema(db);
+
+  // Add-only import of provider keys from FREELLMAPI_<PLATFORM>_KEY env vars,
+  // so the app can be configured headlessly without the dashboard GUI.
+  seedKeysFromEnv(db);
 
   console.log(`Database initialized at ${resolvedPath}`);
   return db;
